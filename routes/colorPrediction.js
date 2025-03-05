@@ -81,72 +81,79 @@ router.get("/prediction/:userid/history", async (req, res) => {
 });
 
 
-
-// Result route
 router.post("/result", async (req, res) => {
   try {
-    const { period, mins } = req.body;
+    const { mins } = req.body; 
 
-    // Generate a random number between 0 and 9
-    const number = Math.floor(Math.random() * 10);
-
-    // Determine the small_big value based on the generated number
-    const small_big = number <= 4 ? "small" : "big";
-
-    // Determine the color based on the generated number
-    let color = "";
-    if (number === 0) {
-      color = "linear-gradient(135deg, #ef4444 50%, #8b5cf6 50%)";
-    } else if (number === 5) {
-      color = "linear-gradient(135deg, #10B981 50%, #8b5cf6 50%)";
-    } else if ([1, 3, 7, 9].includes(number)) {
-      color = "red";
-    } else if ([2, 4, 6, 8].includes(number)) {
-      color = "green";
-    }
-
-    // Insert the result into the results table
-    const query = `
-      INSERT INTO results (number, color, small_big, mins, period) 
-      VALUES (?, ?, ?, ?, ?)
-    `;
-    connection.query(query, [number, color, small_big, mins, period], async (err, results) => {
+    const getLastPeriodQuery = `SELECT period FROM results ORDER BY period DESC LIMIT 1`;
+    connection.query(getLastPeriodQuery, async (err, result) => {
       if (err) {
         console.error(err);
-        return res.status(500).json({ error: "Database error" });
+        return res.status(500).json({ error: "Database error while fetching last period" });
       }
 
-      // Check if the period and number exist in the biddings table
-      const checkBiddingQuery = `
-        SELECT * 
-        FROM biddings 
-        WHERE period = ? AND JSON_CONTAINS(number, JSON_ARRAY(?))
+      let lastPeriod = result.length > 0 ? parseInt(result[0].period, 10) : 0;
+      let newPeriod = lastPeriod + 1;
+
+      const number = Math.floor(Math.random() * 10);
+
+      const small_big = number <= 4 ? "small" : "big";
+
+      let color = "";
+      if (number === 0) {
+        color = "linear-gradient(135deg, #ef4444 50%, #8b5cf6 50%)";
+      } else if (number === 5) {
+        color = "linear-gradient(135deg, #10B981 50%, #8b5cf6 50%)";
+      } else if ([1, 3, 7, 9].includes(number)) {
+        color = "red";
+      } else if ([2, 4, 6, 8].includes(number)) {
+        color = "green";
+      }
+
+      const insertQuery = `
+        INSERT INTO results (number, color, small_big, mins, period) 
+        VALUES (?, ?, ?, ?, ?)
       `;
-      connection.query(checkBiddingQuery, [period, number], async (checkErr, checkResults) => {
-        if (checkErr) {
-          console.error(checkErr);
-          return res.status(500).json({ error: "Error checking biddings table" });
+      connection.query(insertQuery, [number, color, small_big, mins, newPeriod], async (insertErr, insertResult) => {
+        if (insertErr) {
+          console.error(insertErr);
+          return res.status(500).json({ error: "Database error while inserting result" });
         }
 
-
-        if (checkResults.length > 0) {
-          // Call the WinPrediction function if matching records are found
-          try {
-            const predictionResult = await WinPrediction(period, number);
-            console.log(predictionResult,"==============0000000000000");
-
-            // Respond with a success message
-            return res
-              .status(201)
-              .json({ message: "Result added successfully", results, predictionResult });
-          } catch (predictionError) {
-            console.error(predictionError);
-            return res.status(500).json({ error: "Error processing winners" });
+        const checkBiddingQuery = `
+          SELECT * 
+          FROM biddings 
+          WHERE period = ? AND JSON_CONTAINS(number, JSON_ARRAY(?))
+        `;
+        connection.query(checkBiddingQuery, [newPeriod, number], async (checkErr, checkResults) => {
+          if (checkErr) {
+            console.error(checkErr);
+            return res.status(500).json({ error: "Error checking biddings table" });
           }
-        } else {
-          // No matching records found, no need to call WinPrediction
-          return res.status(201).json({ message: "Result added successfully", results });
-        }
+
+          if (checkResults.length > 0) {
+            try {
+              const predictionResult = await WinPrediction(newPeriod, number);
+              console.log(predictionResult, "=== Processing Winners ===");
+
+              return res.status(201).json({ 
+                message: "Result added successfully", 
+                period: newPeriod, 
+                results: insertResult, 
+                predictionResult 
+              });
+            } catch (predictionError) {
+              console.error(predictionError);
+              return res.status(500).json({ error: "Error processing winners" });
+            }
+          } else {
+            return res.status(201).json({ 
+              message: "Result added successfully", 
+              period: newPeriod, 
+              results: insertResult 
+            });
+          }
+        });
       });
     });
   } catch (error) {
@@ -154,6 +161,7 @@ router.post("/result", async (req, res) => {
     res.status(500).json({ error: "Error adding result" });
   }
 });
+
 
 
 const WinPrediction = async function (period, number) {
