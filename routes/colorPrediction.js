@@ -171,42 +171,51 @@ const WinPrediction = async function (period, number) {
       FROM biddings 
       WHERE period = ? AND JSON_CONTAINS(number, JSON_ARRAY(?))
     `;
+
     return new Promise((resolve, reject) => {
-      connection.query(biddingQuery, [period, number], (err, results) => {
+      connection.query(biddingQuery, [period, number], async (err, results) => {
         if (err) {
           console.error(err);
           return reject(new Error("Database query error in biddings table"));
         }
 
         if (results.length === 0) {
-          return resolve("No winners for this period and number");
+          return resolve({ message: "No winners for this period and number", winners: [] });
         }
 
+        let winners = [];
+
         // Process each winner
-        results.forEach((row) => {
+        for (const row of results) {
           const { userid, amount } = row;
-
-          // Ensure amount is treated as a number
           const numericAmount = parseFloat(amount);
-
-          // Correct 90% calculation
           const totalAmount = numericAmount + numericAmount * 0.9;
 
-          // Update the user's wallet balance
           const walletQuery = `
             UPDATE wallet 
             SET balance = balance + ? 
             WHERE userid = ? AND cryptoname = 'cp'
           `;
-          connection.query(walletQuery, [totalAmount, userid], (walletErr) => {
-            if (walletErr) {
-              console.error(walletErr);
-              return reject(new Error("Database query error in wallet table"));
-            }
-          });
-        });
 
-        resolve("Winners processed successfully");
+          try {
+            await new Promise((resolveWallet, rejectWallet) => {
+              connection.query(walletQuery, [totalAmount, userid], (walletErr) => {
+                if (walletErr) {
+                  console.error(walletErr);
+                  return rejectWallet(new Error("Database query error in wallet table"));
+                }
+                resolveWallet();
+              });
+            });
+
+            // Add winner details to response
+            winners.push({ userid, amountWon: totalAmount });
+          } catch (walletError) {
+            return reject(walletError);
+          }
+        }
+
+        resolve({ message: "Winner processed successfully", winners });
       });
     });
   } catch (error) {
