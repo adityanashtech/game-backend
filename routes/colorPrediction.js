@@ -377,6 +377,9 @@ app.post("/bet-history", async (req, res) => {
           `,
           [userId]
       );
+      
+      let totalWin = 0;
+      let totalLose = 0;
 
       // Process the results to calculate status and winnings
       const betHistory = bets.map((bet) => {
@@ -392,6 +395,9 @@ app.post("/bet-history", async (req, res) => {
               ) {
                   status = "won";
                   amountReceived = bet.bet_amount * 1.9; // 90% return
+                  totalWin += amountReceived;
+              } else {
+                  totalLose += bet.bet_amount;
               }
           } else {
               status = "pending"; // Bet has not been processed yet
@@ -409,11 +415,12 @@ app.post("/bet-history", async (req, res) => {
           };
       });
 
-      res.json({ betHistory });
+      res.json({ betHistory, totalWin, totalLose });
   } catch (error) {
       console.error(error);
       res.status(500).json({ error: "Internal server error." });
   }
 });
+
 
 module.exports = app;

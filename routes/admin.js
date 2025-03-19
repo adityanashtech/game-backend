@@ -69,5 +69,25 @@ router.post('/user', async (req, res) => {
   }
 });
 
+router.get('/transactions-summary', (req, res) => {
+  const query = `
+      SELECT 
+          (SELECT SUM(amount) FROM bets) AS total_transactions,
+          (SELECT SUM(amount) FROM bets WHERE placed_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)) AS weekly_transactions,
+          (SELECT SUM(amount) FROM bets WHERE DATE(placed_at) = CURDATE()) AS today_transactions
+  `;
+
+  connection.query(query, (err, result) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      res.json({
+          total_transactions: result[0].total_transactions || 0,
+          weekly_transactions: result[0].weekly_transactions || 0,
+          today_transactions: result[0].today_transactions || 0
+      });
+  });
+});
+
+
 
 module.exports = router;
